@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.endpoints import auth, users, network, security, infrastructure, monitoring, knowledge
+from app.api.endpoints import auth, users, network, security, infrastructure, monitoring, knowledge, core_engine, tenant
 
 api_router = APIRouter()
 
@@ -24,3 +24,9 @@ api_router.include_router(monitoring.router, prefix="/monitoring", tags=["monito
 
 # Knowledge base endpoints
 api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"])
+
+# Core engine endpoints (RAG and AI reasoning)
+api_router.include_router(core_engine.router, prefix="/core", tags=["core-engine"])
+
+# Tenant management endpoints (multi-tenant)
+api_router.include_router(tenant.router, prefix="/tenant", tags=["tenant"])

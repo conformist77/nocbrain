@@ -1,52 +1,46 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.sql import func
 from datetime import datetime
-from typing import List, Optional
 
 from app.core.database import Base
 
 
 class User(Base):
+    """User model with multi-tenancy support"""
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(100))
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    last_login = Column(DateTime)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    full_name = Column(String(255), nullable=False)
     
-    # Foreign keys
-    role_id = Column(Integer, ForeignKey("roles.id"))
+    # Authentication
+    hashed_password = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    is_superuser = Column(Boolean, default=False)
+    
+    # Profile
+    avatar_url = Column(String(500), nullable=True)
+    phone = Column(String(20), nullable=True)
+    timezone = Column(String(50), default="UTC")
+    
+    # Metadata
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    last_login = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
-    role = relationship("Role", back_populates="users")
-    permissions = relationship("Permission", secondary="user_permissions", back_populates="users")
-    audit_logs = relationship("AuditLog", back_populates="user")
+    tenant_memberships = relationship("TenantUser", back_populates="user")
+    created_documents = relationship("KnowledgeDocument", back_populates="creator")
+    assigned_events = relationship("SecurityEvent", back_populates="assignee")
+    created_jobs = relationship("OrchestrationJob", back_populates="creator")
+    approved_jobs = relationship("OrchestrationJob", foreign_keys="OrchestrationJob.approved_by", back_populates="approver")
+    updated_settings = relationship("TenantSettings", back_populates="updater")
     
-    @classmethod
-    async def get_by_username(cls, db, username: str):
-        """Get user by username"""
-        # This would be implemented with actual database query
-        pass
-    
-    @classmethod
-    async def get_by_email(cls, db, email: str):
-        """Get user by email"""
-        # This would be implemented with actual database query
-        pass
-    
-    def has_permission(self, permission_name: str) -> bool:
-        """Check if user has specific permission"""
-        return any(perm.name == permission_name for perm in self.permissions)
-    
-    def has_role(self, role_name: str) -> bool:
-        """Check if user has specific role"""
+    def __repr__(self):
+        return f"<User(id={self.id}, email={self.email}, username={self.username})>"
         return self.role and self.role.name == role_name
 
 

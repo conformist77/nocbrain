@@ -12,6 +12,7 @@ from app.api.router import api_router
 from app.core.logging import setup_logging
 from app.core.logic.reasoning_engine import reasoning_engine
 from app.core.logic.knowledge_manager import knowledge_manager
+from app.middleware.tenant import TenantMiddleware
 
 # Setup logging
 setup_logging()
@@ -30,12 +31,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized successfully")
     
-    # Initialize knowledge manager
+    # Initialize global knowledge collection
     try:
-        await knowledge_manager.initialize_collection()
-        logger.info("Knowledge manager initialized successfully")
+        await knowledge_manager.initialize_collection("global")
+        logger.info("Global knowledge collection initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize knowledge manager: {e}")
+        logger.error(f"Failed to initialize global knowledge collection: {e}")
     
     # Start reasoning engine
     try:
@@ -60,11 +61,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="AI Network Operations Center Assistant - Comprehensive network monitoring, security analysis, and infrastructure management with RAG-powered intelligence",
+    description="AI Network Operations Center Assistant - Comprehensive network monitoring, security analysis, and infrastructure management with multi-tenant RAG-powered intelligence",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
+
+# Add tenant middleware
+app.add_middleware(TenantMiddleware)
 
 # CORS middleware
 app.add_middleware(
@@ -85,21 +89,22 @@ async def health_check():
     try:
         # Get component statuses
         reasoning_stats = await reasoning_engine.get_stats()
-        knowledge_stats = await knowledge_manager.get_knowledge_stats()
+        global_stats = await knowledge_manager.get_tenant_stats("global")
         
         return {
             "status": "healthy",
             "service": "NOCbRAIN",
             "version": settings.VERSION,
             "environment": settings.ENVIRONMENT,
+            "multi_tenant": True,
             "components": {
                 "reasoning_engine": {
                     "is_running": reasoning_stats.get("is_running", False),
                     "total_processed": reasoning_stats.get("total_processed", 0)
                 },
                 "knowledge_manager": {
-                    "total_documents": knowledge_stats.get("total_documents", 0),
-                    "collection_name": knowledge_stats.get("collection_name", "unknown")
+                    "global_documents": global_stats.get("total_documents", 0),
+                    "global_collection": global_stats.get("collection_name", "unknown")
                 }
             }
         }
@@ -120,16 +125,22 @@ async def root():
     return {
         "message": "NOCbRAIN - AI Network Operations Center Assistant",
         "version": settings.VERSION,
-        "description": "RAG-powered network monitoring and security analysis",
+        "description": "Multi-tenant RAG-powered network monitoring and security analysis",
         "docs": "/api/docs",
         "features": [
+            "Multi-tenant architecture with strict isolation",
             "Real-time log analysis with AI",
-            "Knowledge base with RAG",
+            "Knowledge base with RAG and global knowledge",
             "Security pattern matching",
             "Automated NOC action plans",
             "Multi-protocol collectors (SNMP, SSH)",
             "Threat detection and response"
-        ]
+        ],
+        "security": {
+            "tenant_isolation": "Strict vector and database isolation",
+            "data_encryption": "AES-256 at rest and TLS 1.3 in transit",
+            "access_control": "JWT-based authentication with RBAC"
+        }
     }
 
 
