@@ -51,11 +51,53 @@ Edit `.env` file with your specific configurations:
 - Security settings
 - Monitoring targets
 
-## Documentation
-- [API Documentation](./docs/api.md)
-- [User Guide](./docs/user-guide.md)
-- [Developer Guide](./docs/developer-guide.md)
-- [Security Guide](./docs/security.md)
+## 📚 Documentation System
+
+NOCbRAIN provides comprehensive documentation for different user groups:
+
+### 📖 Documentation Categories
+1. **🧑‍💻 Developer Documentation** - Architecture, API, modules, development setup
+2. **🔧 Operations Documentation** - Installation, maintenance, troubleshooting, infrastructure
+3. **🛡️ NOC/SOC Documentation** - User guides, alert management, incident response
+4. **📈 Marketing Documentation** - Product overview, features, case studies, technical specs
+5. **🤖 AI/ML Documentation** - XML format for AI systems to understand product nature
+
+### 🔄 Auto-Update Process
+Documentation is automatically updated based on version changes:
+```bash
+# Update all documentation
+./scripts/update-docs.sh --version v1.0.0
+
+# Update specific category
+./scripts/update-docs.sh --category developer --version v1.0.0
+
+# Deploy to production
+./scripts/deploy-docs.sh --version v1.0.0 --environment production
+```
+
+### 📦 Downloadable Documentation Packages
+Each category generates downloadable packages:
+- `nocbrain-developer-docs-v1.0.0.pdf`
+- `nocbrain-operations-docs-v1.0.0.pdf`
+- `nocbrain-noc-soc-docs-v1.0.0.pdf`
+- `nocbrain-marketing-docs-v1.0.0.pdf`
+- `nocbrain-ai-ml-docs-v1.0.0.xml`
+
+### 🚀 Quick Access
+- **Live Documentation**: https://docs.nocbrain.com
+- **API Reference**: https://api.nocbrain.com/docs
+- **Developer Portal**: https://dev.nocbrain.com
+- **Operations Guide**: https://ops.nocbrain.com
+- **NOC/SOC Portal**: https://portal.nocbrain.com
+- **Package Repository**: https://packages.nocbrain.com
+
+### 🔄 CI/CD Integration
+Documentation is automatically updated and deployed via GitHub Actions:
+- Triggers on code changes, version tags, and manual dispatch
+- Generates all documentation categories automatically
+- Deploys to staging/production environments
+- Creates downloadable packages
+- Verifies deployment and sends notifications
 
 ## Contributing
 We welcome contributions! Please read our [Contributing Guidelines](./CONTRIBUTING.md).

@@ -1,0 +1,305 @@
+name: Documentation Update and Deployment
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+    paths:
+      - 'docs/**'
+      - 'backend/app/**'
+      - 'frontend/src/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update (e.g., v1.0.0)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - production
+        - staging
+        - development
+      category:
+        description: 'Documentation category to update'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+        - all
+        - developer
+        - operations
+        - noc-soc
+        - marketing
+        - ai-ml
+      dry_run:
+        description: 'Dry run (no actual deployment)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Update documentation
+  update-docs:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      docs_path: ${{ steps.version.outputs.docs_path }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: 'frontend/package-lock.json'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc wkhtmltopdf libxml2-utils jq
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 pydantic
+    
+    - name: Install Node.js dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Determine version
+      id: version
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          VERSION="${{ github.event.inputs.version }}"
+        elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+          VERSION="${{ github.ref_name }}"
+        else
+          # Generate version from commit hash and date
+          VERSION="dev-$(git rev-parse --short HEAD)-$(date +%Y%m%d)"
+        fi
+        
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "docs_path=docs/generated" >> $GITHUB_OUTPUT
+        echo "Determined version: $VERSION"
+    
+    - name: Make scripts executable
+      run: |
+        chmod +x scripts/*.sh
+        chmod +x scripts/*.py
+    
+    - name: Update documentation
+      run: |
+        CATEGORY="${{ github.event.inputs.category || 'all' }}"
+        DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+        
+        if [[ "$CATEGORY" == "all" ]]; then
+          ./scripts/update-docs.sh --version ${{ steps.version.outputs.version }} --dry-run $DRY_RUN
+        else
+          ./scripts/update-docs.sh --version ${{ steps.version.outputs.version }} --category $CATEGORY --dry-run $DRY_RUN
+        fi
+    
+    - name: Upload documentation artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: documentation-${{ steps.version.outputs.version }}
+        path: docs/generated/
+        retention-days: 30
+
+  # Deploy to staging (for testing)
+  deploy-staging:
+    needs: update-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download documentation artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation-${{ needs.update-docs.outputs.version }}
+        path: docs/generated/
+    
+    - name: Make scripts executable
+      run: chmod +x scripts/*.sh
+    
+    - name: Deploy to staging
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        ./scripts/deploy-docs.sh --version ${{ needs.update-docs.outputs.version }} --environment staging
+    
+    - name: Verify staging deployment
+      run: |
+        curl -f https://staging-docs.nocbrain.com/ || exit 1
+        curl -f https://staging-api.nocbrain.com/docs || exit 1
+
+  # Deploy to production
+  deploy-production:
+    needs: update-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download documentation artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation-${{ needs.update-docs.outputs.version }}
+        path: docs/generated/
+    
+    - name: Make scripts executable
+      run: chmod +x scripts/*.sh
+    
+    - name: Deploy to production
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        AWS_DISTRIBUTION_ID: ${{ secrets.AWS_DISTRIBUTION_ID }}
+      run: |
+        ./scripts/deploy-docs.sh --version ${{ needs.update-docs.outputs.version }} --environment production
+    
+    - name: Verify production deployment
+      run: |
+        curl -f https://docs.nocbrain.com/ || exit 1
+        curl -f https://api.nocbrain.com/docs || exit 1
+        curl -f https://packages.nocbrain.com/ || exit 1
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ needs.update-docs.outputs.version }}
+        release_name: "NOCbRAIN Documentation ${{ needs.update-docs.outputs.version }}"
+        body: |
+          ## Documentation Release ${{ needs.update-docs.outputs.version }}
+          
+          ### 📚 Documentation Categories
+          - **Developer Documentation**: [View Online](https://docs.nocbrain.com/developer/)
+          - **Operations Documentation**: [View Online](https://docs.nocbrain.com/operations/)
+          - **NOC/SOC Documentation**: [View Online](https://docs.nocbrain.com/noc-soc/)
+          - **Marketing Documentation**: [View Online](https://docs.nocbrain.com/marketing/)
+          - **AI/ML Documentation**: [Download XML](https://packages.nocbrain.com/nocbrain-ai-ml-docs-${{ needs.update-docs.outputs.version }}.xml)
+          
+          ### 📦 Downloadable Packages
+          - [Developer Docs PDF](https://packages.nocbrain.com/nocbrain-developer-docs-${{ needs.update-docs.outputs.version }}.pdf)
+          - [Operations Docs PDF](https://packages.nocbrain.com/nocbrain-operations-docs-${{ needs.update-docs.outputs.version }}.pdf)
+          - [NOC/SOC Docs PDF](https://packages.nocbrain.com/nocbrain-noc-soc-docs-${{ needs.update-docs.outputs.version }}.pdf)
+          - [Marketing Docs PDF](https://packages.nocbrain.com/nocbrain-marketing-docs-${{ needs.update-docs.outputs.version }}.pdf)
+          
+          ### 🚀 What's New
+          - Updated documentation for version ${{ needs.update-docs.outputs.version }}
+          - All documentation categories automatically generated and deployed
+          - Downloadable packages available for offline use
+          - AI/ML documentation in XML format for integration
+          
+          ### 🔗 Quick Links
+          - **Live Documentation**: https://docs.nocbrain.com
+          - **API Reference**: https://api.nocbrain.com/docs
+          - **Package Repository**: https://packages.nocbrain.com
+        draft: false
+        prerelease: false
+
+  # Manual deployment (workflow_dispatch)
+  deploy-manual:
+    needs: update-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download documentation artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: documentation-${{ needs.update-docs.outputs.version }}
+        path: docs/generated/
+    
+    - name: Make scripts executable
+      run: chmod +x scripts/*.sh
+    
+    - name: Deploy documentation
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        AWS_DISTRIBUTION_ID: ${{ secrets.AWS_DISTRIBUTION_ID }}
+      run: |
+        DRY_RUN="${{ github.event.inputs.dry_run }}"
+        ./scripts/deploy-docs.sh --version ${{ needs.update-docs.outputs.version }} --environment ${{ github.event.inputs.environment }} --dry-run $DRY_RUN
+    
+    - name: Verify deployment (if not dry run)
+      if: github.event.inputs.dry_run != 'true'
+      run: |
+        case "${{ github.event.inputs.environment }}" in
+          production)
+            curl -f https://docs.nocbrain.com/ || exit 1
+            curl -f https://api.nocbrain.com/docs || exit 1
+            ;;
+          staging)
+            curl -f https://staging-docs.nocbrain.com/ || exit 1
+            curl -f https://staging-api.nocbrain.com/docs || exit 1
+            ;;
+          development)
+            curl -f https://dev-docs.nocbrain.com/ || exit 1
+            curl -f https://dev-api.nocbrain.com/docs || exit 1
+            ;;
+        esac
+
+  # Notify team
+  notify-team:
+    needs: [update-docs, deploy-staging, deploy-production]
+    runs-on: ubuntu-latest
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    
+    steps:
+    - name: Notify team on Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#documentation'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        text: |
+          📚 NOCbRAIN Documentation Update
+          
+          Version: ${{ needs.update-docs.outputs.version }}
+          Environment: ${{ github.event.inputs.environment || 'staging' }}
+          Status: ${{ job.status }}
+          
+          📖 View at: https://docs.nocbrain.com
+          📦 Packages: https://packages.nocbrain.com
+      if: always()
