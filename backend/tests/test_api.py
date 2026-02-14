@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 import json
+import uuid
 
 from app.main import app
 from app.core.database import get_db
@@ -12,6 +13,21 @@ from app.core.config import settings
 def client():
     """Test client fixture"""
     return TestClient(app)
+
+
+@pytest.fixture
+def tenant_id():
+    """Mock tenant ID for testing"""
+    return str(uuid.uuid4())
+
+
+@pytest.fixture
+def valid_headers(tenant_id):
+    """Valid headers with tenant ID"""
+    return {
+        "X-Tenant-ID": tenant_id,
+        "Content-Type": "application/json"
+    }
 
 
 @pytest.fixture
@@ -95,29 +111,32 @@ class TestTenantEndpoints:
         # Should fail without X-Tenant-ID header
         assert response.status_code == 400
 
-    def test_analyze_log_with_tenant(self, client):
+    def test_analyze_log_with_tenant(self, client, valid_headers, tenant_id):
         """Test log analysis with tenant ID"""
-        headers = {"X-Tenant-ID": "test-tenant-uuid"}
         log_data = {
             "log_data": {
                 "content": "Test log message",
-                "severity": "info"
+                "severity": "info",
+                "tenant_id": tenant_id  # Add tenant_id to mock data
             }
         }
 
         response = client.post(
             "/api/v1/tenant/analyze-log",
             json=log_data,
-            headers=headers
+            headers=valid_headers
         )
         # In real implementation, would test with auth
         assert response.status_code in [200, 401, 403]
 
-    def test_tenant_dashboard(self, client):
+    def test_tenant_dashboard(self, client, valid_headers, tenant_id):
         """Test tenant dashboard endpoint"""
-        headers = {"X-Tenant-ID": "test-tenant-uuid"}
+        dashboard_data = {
+            "tenant_id": tenant_id,
+            "time_range": "24h"
+        }
 
-        response = client.get("/api/v1/tenant/dashboard", headers=headers)
+        response = client.get("/api/v1/tenant/dashboard", headers=valid_headers, params=dashboard_data)
         assert response.status_code in [200, 401, 403]
 
 
@@ -126,20 +145,26 @@ class TestKnowledgeBase:
 
     def test_query_knowledge_requires_tenant(self, client):
         """Test knowledge query requires tenant ID"""
-        query_data = {"query": "test query"}
+        query_data = {
+            "query": "test query",
+            "tenant_id": str(uuid.uuid4())  # Add tenant_id
+        }
 
         response = client.post("/api/v1/tenant/knowledge/query", json=query_data)
         assert response.status_code == 400
 
-    def test_query_knowledge_with_tenant(self, client):
+    def test_query_knowledge_with_tenant(self, client, valid_headers, tenant_id):
         """Test knowledge query with tenant ID"""
-        headers = {"X-Tenant-ID": "test-tenant-uuid"}
-        query_data = {"query": "test query"}
+        query_data = {
+            "query": "test query",
+            "tenant_id": tenant_id,  # Add tenant_id to mock data
+            "limit": 10
+        }
 
         response = client.post(
             "/api/v1/tenant/knowledge/query",
             json=query_data,
-            headers=headers
+            headers=valid_headers
         )
         assert response.status_code in [200, 401, 403]
 
@@ -147,20 +172,20 @@ class TestKnowledgeBase:
 class TestSecurityAnalysis:
     """Test security analysis endpoints"""
 
-    def test_analyze_security_event(self, client):
+    def test_analyze_security_event(self, client, valid_headers, tenant_id):
         """Test security event analysis"""
-        headers = {"X-Tenant-ID": "test-tenant-uuid"}
         security_data = {
             "log_data": {
                 "content": "Failed password for root",
-                "source_ip": "192.168.1.100"
+                "source_ip": "192.168.1.100",
+                "tenant_id": tenant_id  # Add tenant_id to mock data
             }
         }
 
         response = client.post(
             "/api/v1/tenant/security/analyze",
             json=security_data,
-            headers=headers
+            headers=valid_headers
         )
         assert response.status_code in [200, 401, 403]
 
