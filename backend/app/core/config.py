@@ -28,9 +28,20 @@ class Settings(BaseSettings):
     
     # External APIs
     OPENAI_API_KEY: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-4"
+    
+    # Vector Database (Qdrant)
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: Optional[str] = None
+    
+    # Knowledge Base
+    KNOWLEDGE_BASE_PATH: str = "./knowledge-base"
     
     # Monitoring
+    METRICS_ENABLED: bool = True
+    LOG_LEVEL: str = "INFO"
+    OPENAI_MODEL: str = "gpt-4"
+    
+    # Prometheus
     PROMETHEUS_PORT: int = 9090
     METRICS_PATH: str = "/metrics"
     
