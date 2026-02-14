@@ -13,6 +13,7 @@ from app.core.logging import setup_logging
 from app.core.logic.reasoning_engine import reasoning_engine
 from app.core.logic.knowledge_manager import knowledge_manager
 from app.middleware.tenant import TenantMiddleware
+from app.core.rate_limiter import RateLimitMiddleware
 
 # Setup logging
 setup_logging()
@@ -66,6 +67,9 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
+
+# Add rate limiting middleware (before tenant middleware)
+app.add_middleware(RateLimitMiddleware, redis_url=settings.REDIS_URL)
 
 # Add tenant middleware
 app.add_middleware(TenantMiddleware)
