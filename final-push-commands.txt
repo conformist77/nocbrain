@@ -15,7 +15,7 @@ git status
 #    Click "Create repository"
 
 # 4. Add remote (replace YOUR_USERNAME with your GitHub username)
-git remote add origin https://github.com/YOUR_USERNAME/nocbrain.git
+git remote add origin https://github.com/conformist77/nocbrain.git
 
 # 5. Verify remote was added
 git remote -v
@@ -24,4 +24,4 @@ git remote -v
 git push -u origin main
 
 # 7. Done! Your repository will be at:
-#    https://github.com/YOUR_USERNAME/nocbrain
+#    https://github.com/conformist77/nocbrain
