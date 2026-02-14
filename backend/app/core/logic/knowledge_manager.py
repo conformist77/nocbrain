@@ -603,58 +603,115 @@ NOC ACTION PLAN:"""
         except Exception as e:
             logger.error(f"Failed to get stats for tenant {tenant_id}: {e}")
             return {
-                "status": "error",
                 "tenant_id": tenant_id,
+                "total_documents": 0,
+                "knowledge_types": [],
+                "collection_name": None,
+                "is_global": False,
                 "error": str(e)
             }
-    
-    async def search_by_metadata(
-        self, 
+
+    async def search_knowledge(
+        self,
         tenant_id: str,
-        metadata_filter: Dict[str, Any],
-        limit: int = 10
+        query: str,
+        category: Optional[str] = None,
+        limit: int = 5,
+        include_global: bool = True
     ) -> List[Dict[str, Any]]:
-        """Search documents by metadata with tenant isolation"""
+        """
+        Search knowledge with strict tenant isolation
+        
+        Args:
+            tenant_id: Tenant identifier for isolation
+            query: Search query
+            category: Optional category filter
+            limit: Maximum results to return
+            include_global: Whether to include global knowledge results
+            
+        Returns:
+            List of relevant knowledge documents with tenant isolation enforced
+        """
         try:
-            # Build filter with tenant isolation
-            filter_conditions = [
-                FieldCondition(
-                    key="tenant_id",
-                    match=MatchValue(value=tenant_id)
-                )
-            ]
+            logger.info(f"Searching knowledge for tenant {tenant_id}: {query}")
             
-            # Add metadata filters
-            for key, value in metadata_filter.items():
-                filter_conditions.append(
+            # Create strict tenant filter - CRITICAL for multi-tenancy security
+            tenant_filter = Filter(
+                must=[
                     FieldCondition(
-                        key=f"metadata.{key}",
-                        match=MatchValue(value=value)
+                        key="tenant_id",
+                        match=MatchValue(value=tenant_id)
                     )
-                )
-            
-            filter_dict = Filter(must=filter_conditions)
-            
-            # Search with filter
-            vector_store = self._get_tenant_vector_store(tenant_id)
-            results = vector_store.similarity_search(
-                query="",  # Empty query to get all matching documents
-                k=limit,
-                filter=filter_dict
+                ]
             )
             
-            return [
-                {
-                    "content": doc.page_content,
-                    "metadata": doc.metadata
-                }
-                for doc in results
-            ]
+            # Search tenant-specific knowledge first
+            tenant_results = []
+            if tenant_id != "global":
+                tenant_collection = f"knowledge_{tenant_id}"
+                if await self._collection_exists(tenant_collection):
+                    tenant_search = self.qdrant_client.search(
+                        collection_name=tenant_collection,
+                        query_vector=self.embeddings.embed_query(query),
+                        query_filter=tenant_filter,
+                        limit=limit,
+                        with_payload=True,
+                        with_vectors=False
+                    )
+                    
+                    for result in tenant_search:
+                        tenant_results.append({
+                            "content": result.payload.get("content", ""),
+                            "metadata": result.payload.get("metadata", {}),
+                            "score": result.score,
+                            "source": "tenant",
+                            "tenant_id": tenant_id
+                        })
+            
+            # Search global knowledge if requested
+            global_results = []
+            if include_global:
+                global_collection = "knowledge_global"
+                if await self._collection_exists(global_collection):
+                    # Global knowledge doesn't need tenant filter
+                    global_search = self.qdrant_client.search(
+                        collection_name=global_collection,
+                        query_vector=self.embeddings.embed_query(query),
+                        limit=limit,
+                        with_payload=True,
+                        with_vectors=False
+                    )
+                    
+                    for result in global_search:
+                        global_results.append({
+                            "content": result.payload.get("content", ""),
+                            "metadata": result.payload.get("metadata", {}),
+                            "score": result.score,
+                            "source": "global",
+                            "tenant_id": "global"
+                        })
+            
+            # Combine and rank results
+            all_results = tenant_results + global_results
+            
+            # Apply category filter if specified
+            if category:
+                all_results = [
+                    result for result in all_results
+                    if result["metadata"].get("category") == category
+                ]
+            
+            # Sort by score and limit
+            all_results.sort(key=lambda x: x["score"], reverse=True)
+            all_results = all_results[:limit]
+            
+            logger.info(f"Found {len(all_results)} results for tenant {tenant_id}")
+            return all_results
             
         except Exception as e:
-            logger.error(f"Failed to search by metadata for tenant {tenant_id}: {e}")
+            logger.error(f"Error searching knowledge for tenant {tenant_id}: {e}")
             return []
-    
+
     async def delete_tenant_data(self, tenant_id: str) -> Dict[str, Any]:
         """Delete all data for specific tenant"""
         try:
