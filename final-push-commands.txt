@@ -1,0 +1,27 @@
+# NOCbRAIN Final GitHub Setup Commands
+# Copy and paste these commands in Command Prompt (not PowerShell)
+
+# 1. Go to project directory
+cd c:\Users\renderkar\Documents\NOCbRAIN
+
+# 2. Check current status (optional)
+git status
+
+# 3. Create GitHub repository first:
+#    Go to https://github.com/new
+#    Repository name: nocbrain
+#    Description: AI Network Operations Center Assistant
+#    Choose Public
+#    Click "Create repository"
+
+# 4. Add remote (replace YOUR_USERNAME with your GitHub username)
+git remote add origin https://github.com/YOUR_USERNAME/nocbrain.git
+
+# 5. Verify remote was added
+git remote -v
+
+# 6. Push to GitHub
+git push -u origin main
+
+# 7. Done! Your repository will be at:
+#    https://github.com/YOUR_USERNAME/nocbrain

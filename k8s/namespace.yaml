@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nocbrain
+  labels:
+    name: nocbrain
+    app: nocbrain
+    environment: production
+  annotations:
+    description: "NOCbRAIN - AI Network Operations Center Assistant"
+    contact: "support@nocbrain.org"

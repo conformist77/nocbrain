@@ -1,0 +1,25 @@
+# Copy these commands in Command Prompt (not PowerShell)
+
+# 1. Go to project directory
+cd c:\Users\renderkar\Documents\NOCbRAIN
+
+# 2. Remove existing remote
+git remote remove origin
+
+# 3. Add new remote
+git remote add origin https://github.com/conformist77/nocbrain.git
+
+# 4. Verify remote
+git remote -v
+
+# 5. Push to GitHub
+git push -u origin main
+
+# If push fails, try force push:
+git push -u origin main --force
+
+# If still fails, delete and recreate repository:
+# 1. Go to https://github.com/conformist77/nocbrain
+# 2. Settings → Danger Zone → Delete repository
+# 3. Create new repository at https://github.com/new
+# 4. Run the above commands again
