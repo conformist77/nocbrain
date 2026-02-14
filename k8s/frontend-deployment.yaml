@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nocbrain-frontend
+  namespace: nocbrain
+  labels:
+    app: nocbrain-frontend
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nocbrain-frontend
+  template:
+    metadata:
+      labels:
+        app: nocbrain-frontend
+    spec:
+      containers:
+      - name: nocbrain-frontend
+        image: ghcr.io/conformist77/nocbrain/frontend:latest
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: nocbrain-frontend-config
+        - secretRef:
+            name: nocbrain-frontend-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nocbrain-frontend-service
+  namespace: nocbrain
+  labels:
+    app: nocbrain-frontend
+spec:
+  selector:
+    app: nocbrain-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nocbrain-frontend-ingress
+  namespace: nocbrain
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - nocbrain.com
+    secretName: nocbrain-tls
+  rules:
+  - host: nocbrain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nocbrain-frontend-service
+            port:
+              number: 80
