@@ -432,12 +432,18 @@ Steps to verify the fix has been applied successfully.
         return saved_files
     
     async def index_knowledge(self, files: List[str]) -> bool:
-        """Index knowledge files in Qdrant"""
+        """Index knowledge files in Qdrant with clear GLOBAL vs PRIVATE separation"""
         print("🔍 Indexing knowledge in Qdrant...")
         
         try:
-            # Initialize knowledge manager if not already done
+            # Initialize both global and tenant collections
             await knowledge_manager.initialize_collection("global")
+            
+            # Track indexing statistics
+            stats = {
+                "global": {"files": 0, "success": 0, "failed": 0},
+                "tenants": {}  # Track per-tenant stats
+            }
             
             # Process each file
             for file_path in files:
@@ -447,15 +453,43 @@ Steps to verify the fix has been applied successfully.
                 async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
                     content = await f.read()
                 
-                # Determine tenant and collection
-                if "global" in file_path:
-                    tenant_id = "global"
-                else:
-                    # Extract tenant from path
-                    path_parts = Path(file_path).parts
-                    tenant_id = "demo-tenant"  # Default
+                # Determine tenant and collection with clear separation
+                path_obj = Path(file_path)
                 
-                # Add to knowledge base
+                if "global" in file_path or any(source in file_path for source in self.knowledge_sources.keys()):
+                    # GLOBAL knowledge - shared across all tenants
+                    tenant_id = "global"
+                    collection_name = "global_knowledge"
+                    access_level = "public"
+                    stats["global"]["files"] += 1
+                    
+                else:
+                    # PRIVATE knowledge - tenant-specific only
+                    # Extract tenant from path structure: knowledge-base/tenants/{tenant_id}/...
+                    path_parts = path_obj.parts
+                    tenant_id = None
+                    
+                    for i, part in enumerate(path_parts):
+                        if part == "tenants" and i + 1 < len(path_parts):
+                            tenant_id = path_parts[i + 1]
+                            break
+                    
+                    if not tenant_id:
+                        # Fallback to demo tenant for testing
+                        tenant_id = "demo-tenant"
+                        print(f"    ⚠️  No tenant found in path, using demo-tenant")
+                    
+                    collection_name = f"tenant_{tenant_id}_knowledge"
+                    access_level = "private"
+                    
+                    # Initialize tenant collection if not exists
+                    if tenant_id not in stats["tenants"]:
+                        stats["tenants"][tenant_id] = {"files": 0, "success": 0, "failed": 0}
+                        await knowledge_manager.initialize_collection(tenant_id)
+                    
+                    stats["tenants"][tenant_id]["files"] += 1
+                
+                # Add to knowledge base with clear metadata
                 success = await knowledge_manager.add_document(
                     tenant_id=tenant_id,
                     content=content,
@@ -463,19 +497,52 @@ Steps to verify the fix has been applied successfully.
                         "source": file_path,
                         "category": self._get_category_from_path(file_path),
                         "indexed_at": datetime.now().isoformat(),
-                        "document_type": "troubleshooting_guide"
+                        "document_type": "troubleshooting_guide",
+                        "access_level": access_level,  # Clear distinction: PUBLIC vs PRIVATE
+                        "collection_name": collection_name,
+                        "tenant_id": tenant_id,
+                        "is_global": tenant_id == "global",
+                        "file_size": len(content.encode('utf-8')),
+                        "content_hash": hashlib.md5(content.encode('utf-8')).hexdigest()
                     }
                 )
                 
-                if success:
-                    print(f"    ✅ Indexed {file_path}")
+                # Update statistics
+                if tenant_id == "global":
+                    if success:
+                        stats["global"]["success"] += 1
+                        print(f"    ✅ Indexed GLOBAL: {file_path}")
+                    else:
+                        stats["global"]["failed"] += 1
+                        print(f"    ❌ Failed to index GLOBAL: {file_path}")
                 else:
-                    print(f"    ❌ Failed to index {file_path}")
+                    if success:
+                        stats["tenants"][tenant_id]["success"] += 1
+                        print(f"    ✅ Indexed PRIVATE ({tenant_id}): {file_path}")
+                    else:
+                        stats["tenants"][tenant_id]["failed"] += 1
+                        print(f"    ❌ Failed to index PRIVATE ({tenant_id}): {file_path}")
+            
+            # Print indexing summary
+            print(f"\n📊 Indexing Summary:")
+            print(f"  🌍 GLOBAL Collection:")
+            print(f"    Files processed: {stats['global']['files']}")
+            print(f"    Successfully indexed: {stats['global']['success']}")
+            print(f"    Failed: {stats['global']['failed']}")
+            
+            print(f"  🏢 PRIVATE Collections:")
+            for tenant_id, tenant_stats in stats["tenants"].items():
+                print(f"    Tenant {tenant_id}:")
+                print(f"      Files processed: {tenant_stats['files']}")
+                print(f"      Successfully indexed: {tenant_stats['success']}")
+                print(f"      Failed: {tenant_stats['failed']}")
             
             return True
             
         except Exception as e:
             print(f"❌ Error indexing knowledge: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _get_category_from_path(self, file_path: str) -> str:
